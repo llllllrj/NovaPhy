@@ -218,3 +218,159 @@ def test_pendulum_energy_conservation():
     energy_ratio = abs(E_final / E_initial) if abs(E_initial) > 0.1 else 1.0
     assert 0.5 < energy_ratio < 2.0, \
         f"Energy not approximately conserved: E_initial={E_initial:.3f}, E_final={E_final:.3f}"
+
+
+# ---- Slide joint tests ----
+
+def test_slide_joint_dof():
+    """Slide joint should have num_q=1, num_qd=1."""
+    j = novaphy.Joint()
+    j.type = novaphy.JointType.Slide
+    assert j.num_q() == 1
+    assert j.num_qd() == 1
+
+
+def test_slide_joint_falls_under_gravity():
+    """A mass on a vertical slide joint should fall under gravity."""
+    art = novaphy.Articulation()
+
+    j = novaphy.Joint()
+    j.type = novaphy.JointType.Slide
+    j.axis = np.array([0, -1, 0], dtype=np.float32)  # slide along -Y
+    j.parent = -1
+    j.parent_to_joint = novaphy.Transform.identity()
+    art.joints = [j]
+
+    body = novaphy.RigidBody()
+    body.mass = 1.0
+    body.com = np.array([0, 0, 0], dtype=np.float32)
+    body.inertia = np.eye(3, dtype=np.float32) * 0.01
+    art.bodies = [body]
+    art.build_spatial_inertias()
+
+    q = np.zeros(1, dtype=np.float32)
+    qd = np.zeros(1, dtype=np.float32)
+    tau = np.zeros(1, dtype=np.float32)
+    gravity = np.array([0, -9.81, 0], dtype=np.float32)
+
+    solver = novaphy.ArticulatedSolver()
+    for _ in range(120):
+        q, qd = solver.step(art, q, qd, tau, gravity, 1.0 / 120.0)
+
+    # Mass should have moved along -Y axis (positive q means displacement along axis)
+    assert q[0] > 0.1, f"Slide joint should move under gravity, got q={q[0]}"
+
+
+def test_slide_joint_mass_matrix():
+    """Mass matrix for a single slide joint should be a 1x1 scalar = mass."""
+    art = novaphy.Articulation()
+
+    j = novaphy.Joint()
+    j.type = novaphy.JointType.Slide
+    j.axis = np.array([1, 0, 0], dtype=np.float32)
+    j.parent = -1
+    art.joints = [j]
+
+    body = novaphy.RigidBody()
+    body.mass = 2.5
+    body.com = np.array([0, 0, 0], dtype=np.float32)
+    body.inertia = np.eye(3, dtype=np.float32) * 0.1
+    art.bodies = [body]
+    art.build_spatial_inertias()
+
+    q = np.zeros(1, dtype=np.float32)
+    H = novaphy.mass_matrix_crba(art, q)
+    assert H.shape == (1, 1)
+    # For a slide joint with COM at origin, H should equal the mass
+    npt.assert_allclose(H[0, 0], 2.5, atol=0.1)
+
+
+# ---- Ball joint tests ----
+
+def test_ball_joint_dof():
+    """Ball joint should have num_q=4, num_qd=3."""
+    j = novaphy.Joint()
+    j.type = novaphy.JointType.Ball
+    assert j.num_q() == 4
+    assert j.num_qd() == 3
+
+
+def test_ball_joint_forward_kinematics():
+    """Ball joint FK should produce rotation from quaternion."""
+    art = novaphy.Articulation()
+
+    j = novaphy.Joint()
+    j.type = novaphy.JointType.Ball
+    j.parent = -1
+    j.parent_to_joint = novaphy.Transform.identity()
+    art.joints = [j]
+
+    body = novaphy.RigidBody()
+    body.mass = 1.0
+    body.inertia = np.eye(3, dtype=np.float32) * 0.1
+    art.bodies = [body]
+    art.build_spatial_inertias()
+
+    # Identity quaternion: [0, 0, 0, 1] (qx, qy, qz, qw)
+    q = np.array([0, 0, 0, 1], dtype=np.float32)
+    transforms = novaphy.forward_kinematics(art, q)
+    assert len(transforms) == 1
+    npt.assert_allclose(transforms[0].position, [0, 0, 0], atol=1e-5)
+
+
+def test_ball_joint_swings_under_gravity():
+    """A mass attached via ball joint should swing under gravity."""
+    art = novaphy.Articulation()
+
+    j = novaphy.Joint()
+    j.type = novaphy.JointType.Ball
+    j.parent = -1
+    j.parent_to_joint = novaphy.Transform.identity()
+    art.joints = [j]
+
+    body = novaphy.RigidBody()
+    body.mass = 1.0
+    body.com = np.array([0, -1, 0], dtype=np.float32)
+    body.inertia = np.eye(3, dtype=np.float32) * 1.0
+    art.bodies = [body]
+    art.build_spatial_inertias()
+
+    # Start with 45-degree rotation about Z: quat for 45° about Z
+    angle = np.pi / 4
+    q = np.array([0, 0, np.sin(angle/2), np.cos(angle/2)], dtype=np.float32)
+    qd = np.zeros(3, dtype=np.float32)
+    tau = np.zeros(3, dtype=np.float32)
+    gravity = np.array([0, -9.81, 0], dtype=np.float32)
+
+    solver = novaphy.ArticulatedSolver()
+    for _ in range(120):
+        q, qd = solver.step(art, q, qd, tau, gravity, 1.0 / 120.0)
+
+    # Angular velocity should be non-zero (swinging)
+    assert np.linalg.norm(qd) > 0.01, "Ball joint should swing under gravity"
+
+
+def test_ball_joint_mass_matrix_symmetric():
+    """Ball joint mass matrix should be 3x3 symmetric positive definite."""
+    art = novaphy.Articulation()
+
+    j = novaphy.Joint()
+    j.type = novaphy.JointType.Ball
+    j.parent = -1
+    art.joints = [j]
+
+    body = novaphy.RigidBody()
+    body.mass = 1.0
+    body.com = np.array([0, -0.5, 0], dtype=np.float32)
+    body.inertia = np.diag([0.1, 0.2, 0.3]).astype(np.float32)
+    art.bodies = [body]
+    art.build_spatial_inertias()
+
+    # Some non-trivial orientation
+    angle = 0.3
+    q = np.array([np.sin(angle/2), 0, 0, np.cos(angle/2)], dtype=np.float32)
+    H = novaphy.mass_matrix_crba(art, q)
+    assert H.shape == (3, 3)
+    npt.assert_allclose(H, H.T, atol=1e-5)
+    eigenvalues = np.linalg.eigvalsh(H)
+    assert np.all(eigenvalues > 0), f"Not positive definite: {eigenvalues}"

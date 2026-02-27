@@ -138,13 +138,14 @@ def test_sphere_falls_and_rests():
 
 def test_solver_settings():
     settings = novaphy.SolverSettings()
-    assert settings.velocity_iterations == 10
-    assert settings.warm_starting is True
-
-    settings.velocity_iterations = 20
-    settings.baumgarte = 0.3
     assert settings.velocity_iterations == 20
     assert abs(settings.baumgarte - 0.3) < 1e-6
+    assert settings.warm_starting is True
+
+    settings.velocity_iterations = 30
+    settings.baumgarte = 0.5
+    assert settings.velocity_iterations == 30
+    assert abs(settings.baumgarte - 0.5) < 1e-6
 
 
 def test_apply_force():

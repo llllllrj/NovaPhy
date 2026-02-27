@@ -10,8 +10,8 @@ namespace novaphy {
 
 /// Configuration for the Sequential Impulse solver
 struct SolverSettings {
-    int velocity_iterations = 10;
-    float baumgarte = 0.2f;     // position correction factor
+    int velocity_iterations = 20;
+    float baumgarte = 0.3f;     // position correction factor
     float slop = 0.005f;        // penetration slop (allowed before correction)
     bool warm_starting = true;
 };
@@ -38,12 +38,14 @@ private:
 
     // Pre-computed per-constraint data
     struct ConstraintData {
-        Vec3f r_a, r_b;          // contact point relative to body COM
-        float effective_mass_n;   // effective mass along normal
-        float effective_mass_t1;  // effective mass along tangent1
-        float effective_mass_t2;  // effective mass along tangent2
-        Vec3f tangent1, tangent2; // friction directions
-        float bias;               // position correction bias
+        Vec3f r_a, r_b;              // contact point relative to body COM
+        float effective_mass_n;       // effective mass along normal
+        float effective_mass_t1;      // effective mass along tangent1
+        float effective_mass_t2;      // effective mass along tangent2
+        Vec3f tangent1, tangent2;     // friction directions
+        float bias;                   // position correction bias
+        Mat3f inv_I_a_world;          // world-frame inverse inertia for body_a
+        Mat3f inv_I_b_world;          // world-frame inverse inertia for body_b
     };
 
     std::vector<ConstraintData> constraint_data_;

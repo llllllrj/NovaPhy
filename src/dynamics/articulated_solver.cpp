@@ -17,8 +17,6 @@ void ArticulatedSolver::step(const Articulation& model,
     qd += qdd * dt;
 
     // Integrate positions
-    // For revolute joints: q += qd * dt
-    // For free joints: position += v * dt, quaternion += 0.5 * omega * q * dt
     for (int i = 0; i < model.num_links(); ++i) {
         const auto& joint = model.joints[i];
         int qi = model.q_start(i);
@@ -30,6 +28,11 @@ void ArticulatedSolver::step(const Articulation& model,
                 break;
 
             case JointType::Fixed:
+                break;
+
+            case JointType::Slide:
+                // Linear integration: q += qd * dt
+                q(qi) += qd(qdi) * dt;
                 break;
 
             case JointType::Free: {
@@ -49,7 +52,6 @@ void ArticulatedSolver::step(const Articulation& model,
                 float qz = q(qi + 5);
                 float qw = q(qi + 6);
 
-                // dq/dt = 0.5 * omega * q (quaternion multiplication)
                 float dqx = 0.5f * (wx * qw + wz * qy - wy * qz);
                 float dqy = 0.5f * (wy * qw - wz * qx + wx * qz);
                 float dqz = 0.5f * (wz * qw + wy * qx - wx * qy);
@@ -61,20 +63,47 @@ void ArticulatedSolver::step(const Articulation& model,
                 q(qi + 6) += dqw * dt;
                 break;
             }
+
+            case JointType::Ball: {
+                // Quaternion integration: q[0:4] = [qx, qy, qz, qw]
+                // qd[0:3] = [wx, wy, wz] angular velocity
+                float wx = qd(qdi + 0);
+                float wy = qd(qdi + 1);
+                float wz = qd(qdi + 2);
+
+                float qx = q(qi + 0);
+                float qy = q(qi + 1);
+                float qz = q(qi + 2);
+                float qw = q(qi + 3);
+
+                float dqx = 0.5f * (wx * qw + wz * qy - wy * qz);
+                float dqy = 0.5f * (wy * qw - wz * qx + wx * qz);
+                float dqz = 0.5f * (wz * qw + wy * qx - wx * qy);
+                float dqw = 0.5f * (-wx * qx - wy * qy - wz * qz);
+
+                q(qi + 0) += dqx * dt;
+                q(qi + 1) += dqy * dt;
+                q(qi + 2) += dqz * dt;
+                q(qi + 3) += dqw * dt;
+                break;
+            }
         }
     }
 
     // Normalize quaternions
     normalize_quaternions(model, q);
 
-    // Angular velocity damping
+    // Velocity damping
     qd *= 0.999f;
 }
 
 void ArticulatedSolver::normalize_quaternions(const Articulation& model, VecXf& q) {
     for (int i = 0; i < model.num_links(); ++i) {
-        if (model.joints[i].type == JointType::Free) {
-            int qi = model.q_start(i);
+        const auto& joint = model.joints[i];
+        int qi = model.q_start(i);
+
+        if (joint.type == JointType::Free) {
+            // Free joint: quaternion at q[qi+3 : qi+6]
             float norm = std::sqrt(
                 q(qi+3)*q(qi+3) + q(qi+4)*q(qi+4) +
                 q(qi+5)*q(qi+5) + q(qi+6)*q(qi+6));
@@ -83,6 +112,17 @@ void ArticulatedSolver::normalize_quaternions(const Articulation& model, VecXf& 
                 q(qi+4) /= norm;
                 q(qi+5) /= norm;
                 q(qi+6) /= norm;
+            }
+        } else if (joint.type == JointType::Ball) {
+            // Ball joint: quaternion at q[qi+0 : qi+3]
+            float norm = std::sqrt(
+                q(qi+0)*q(qi+0) + q(qi+1)*q(qi+1) +
+                q(qi+2)*q(qi+2) + q(qi+3)*q(qi+3));
+            if (norm > 1e-6f) {
+                q(qi+0) /= norm;
+                q(qi+1) /= norm;
+                q(qi+2) /= norm;
+                q(qi+3) /= norm;
             }
         }
     }

@@ -29,13 +29,11 @@ void FreeBodySolver::solve(std::vector<ContactPoint>& contacts,
 
             if (cp.body_a >= 0 && !bodies[cp.body_a].is_static()) {
                 linear_velocities[cp.body_a] -= impulse * bodies[cp.body_a].inv_mass();
-                angular_velocities[cp.body_a] -= bodies[cp.body_a].inv_inertia() *
-                    cd.r_a.cross(impulse);
+                angular_velocities[cp.body_a] -= cd.inv_I_a_world * cd.r_a.cross(impulse);
             }
             if (cp.body_b >= 0 && !bodies[cp.body_b].is_static()) {
                 linear_velocities[cp.body_b] += impulse * bodies[cp.body_b].inv_mass();
-                angular_velocities[cp.body_b] += bodies[cp.body_b].inv_inertia() *
-                    cd.r_b.cross(impulse);
+                angular_velocities[cp.body_b] += cd.inv_I_b_world * cd.r_b.cross(impulse);
             }
         }
     }
@@ -70,17 +68,32 @@ void FreeBodySolver::pre_step(std::vector<ContactPoint>& contacts,
             cd.r_b = Vec3f::Zero();
         }
 
-        // Compute effective mass along normal
+        // Compute world-frame inverse inertia: I_world_inv = R * I_body_inv * R^T
         float inv_mass_a = (cp.body_a >= 0) ? bodies[cp.body_a].inv_mass() : 0.0f;
         float inv_mass_b = (cp.body_b >= 0) ? bodies[cp.body_b].inv_mass() : 0.0f;
-        Mat3f inv_I_a = (cp.body_a >= 0) ? bodies[cp.body_a].inv_inertia() : Mat3f::Zero();
-        Mat3f inv_I_b = (cp.body_b >= 0) ? bodies[cp.body_b].inv_inertia() : Mat3f::Zero();
 
+        if (cp.body_a >= 0 && !bodies[cp.body_a].is_static()) {
+            Mat3f R_a = transforms[cp.body_a].rotation_matrix();
+            Mat3f inv_I_body_a = bodies[cp.body_a].inv_inertia();
+            cd.inv_I_a_world = R_a * inv_I_body_a * R_a.transpose();
+        } else {
+            cd.inv_I_a_world = Mat3f::Zero();
+        }
+
+        if (cp.body_b >= 0 && !bodies[cp.body_b].is_static()) {
+            Mat3f R_b = transforms[cp.body_b].rotation_matrix();
+            Mat3f inv_I_body_b = bodies[cp.body_b].inv_inertia();
+            cd.inv_I_b_world = R_b * inv_I_body_b * R_b.transpose();
+        } else {
+            cd.inv_I_b_world = Mat3f::Zero();
+        }
+
+        // Effective mass along normal using world-frame inverse inertia
         Vec3f rn_a = cd.r_a.cross(cp.normal);
         Vec3f rn_b = cd.r_b.cross(cp.normal);
 
         cd.effective_mass_n = inv_mass_a + inv_mass_b +
-            rn_a.dot(inv_I_a * rn_a) + rn_b.dot(inv_I_b * rn_b);
+            rn_a.dot(cd.inv_I_a_world * rn_a) + rn_b.dot(cd.inv_I_b_world * rn_b);
         if (cd.effective_mass_n > 0) cd.effective_mass_n = 1.0f / cd.effective_mass_n;
 
         // Compute tangent basis for friction
@@ -91,17 +104,17 @@ void FreeBodySolver::pre_step(std::vector<ContactPoint>& contacts,
         }
         cd.tangent2 = cp.normal.cross(cd.tangent1);
 
-        // Effective mass along tangents
+        // Effective mass along tangents using world-frame inverse inertia
         Vec3f rt1_a = cd.r_a.cross(cd.tangent1);
         Vec3f rt1_b = cd.r_b.cross(cd.tangent1);
         cd.effective_mass_t1 = inv_mass_a + inv_mass_b +
-            rt1_a.dot(inv_I_a * rt1_a) + rt1_b.dot(inv_I_b * rt1_b);
+            rt1_a.dot(cd.inv_I_a_world * rt1_a) + rt1_b.dot(cd.inv_I_b_world * rt1_b);
         if (cd.effective_mass_t1 > 0) cd.effective_mass_t1 = 1.0f / cd.effective_mass_t1;
 
         Vec3f rt2_a = cd.r_a.cross(cd.tangent2);
         Vec3f rt2_b = cd.r_b.cross(cd.tangent2);
         cd.effective_mass_t2 = inv_mass_a + inv_mass_b +
-            rt2_a.dot(inv_I_a * rt2_a) + rt2_b.dot(inv_I_b * rt2_b);
+            rt2_a.dot(cd.inv_I_a_world * rt2_a) + rt2_b.dot(cd.inv_I_b_world * rt2_b);
         if (cd.effective_mass_t2 > 0) cd.effective_mass_t2 = 1.0f / cd.effective_mass_t2;
 
         // Baumgarte position correction bias
@@ -142,8 +155,9 @@ void FreeBodySolver::solve_velocity(std::vector<ContactPoint>& contacts,
 
         float inv_mass_a = (cp.body_a >= 0) ? bodies[cp.body_a].inv_mass() : 0.0f;
         float inv_mass_b = (cp.body_b >= 0) ? bodies[cp.body_b].inv_mass() : 0.0f;
-        Mat3f inv_I_a = (cp.body_a >= 0) ? bodies[cp.body_a].inv_inertia() : Mat3f::Zero();
-        Mat3f inv_I_b = (cp.body_b >= 0) ? bodies[cp.body_b].inv_inertia() : Mat3f::Zero();
+        // Use cached world-frame inverse inertia from pre_step
+        const Mat3f& inv_I_a = cd.inv_I_a_world;
+        const Mat3f& inv_I_b = cd.inv_I_b_world;
 
         // Relative velocity at contact point
         Vec3f vel_a = Vec3f::Zero(), vel_b = Vec3f::Zero();

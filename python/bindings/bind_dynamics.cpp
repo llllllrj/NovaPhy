@@ -15,7 +15,9 @@ void bind_dynamics(py::module_& m) {
     py::enum_<JointType>(m, "JointType")
         .value("Revolute", JointType::Revolute)
         .value("Fixed", JointType::Fixed)
-        .value("Free", JointType::Free);
+        .value("Free", JointType::Free)
+        .value("Slide", JointType::Slide)
+        .value("Ball", JointType::Ball);
 
     // --- Joint ---
     py::class_<Joint>(m, "Joint")

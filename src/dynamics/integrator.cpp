@@ -10,8 +10,8 @@ void SymplecticEuler::integrate_velocity(Vec3f& linear_vel, Vec3f& angular_vel,
     linear_vel += (gravity + force * inv_mass) * dt;
     angular_vel += inv_inertia * torque * dt;
 
-    // Angular damping to prevent energy blow-up
-    angular_vel *= 0.98f;
+    // Gentle angular damping to prevent numerical drift
+    angular_vel *= 0.999f;
 }
 
 void SymplecticEuler::integrate_position(Transform& transform,
