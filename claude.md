@@ -49,9 +49,9 @@ Working directory: `E:\NovaPhy`
 
 ### Build Commands
 ```bash
-# Development install
+# Development install (set CMAKE_ARGS to point to your vcpkg)
 conda activate novaphy
-pip install -e .
+CMAKE_ARGS="-DCMAKE_TOOLCHAIN_FILE=F:/vcpkg/scripts/buildsystems/vcpkg.cmake" pip install -e .
 
 # Python tests
 pytest tests/python/ -v

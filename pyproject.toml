@@ -24,8 +24,5 @@ minimum-version = "build-system.requires"
 build-dir = "build/{wheel_tag}"
 cmake.build-type = "Release"
 
-[tool.scikit-build.cmake.define]
-CMAKE_TOOLCHAIN_FILE = "F:/vcpkg/scripts/buildsystems/vcpkg.cmake"
-
 [tool.pytest.ini_options]
 testpaths = ["tests/python"]
